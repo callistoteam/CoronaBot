@@ -1,4 +1,6 @@
-from flask import Flask, request, jsonify
+#-*- coding: utf-8 -*-
+
+from flask import Flask, request, jsonify, Response
 import sys
 import requests
 import math
@@ -7,6 +9,8 @@ from bs4 import BeautifulSoup
 import time
 import threading
 import re
+import html
+import json
 
 app = Flask(__name__)
 data = {
@@ -19,7 +23,8 @@ data = {
         "sars":{
                 "korea":{},
                 "world":{}
-                }
+                },
+        "youtube" : {}
         }
 
 def crawling():
@@ -84,11 +89,29 @@ def crawling():
     data['sars']['korea']['death'] = 0
     data['sars']['world']['lethality'] = 9.6
     data['sars']['world']['countries'] = 26
+
+    #유튜브 뉴스
+    r = requests.get("https://www.googleapis.com/youtube/v3/search?part=snippet&key=토큰&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=20")
+    j = r.json()
+    print(type(html.unescape(j['items'][0]['snippet']['title'])))
+    news = []
+    for i in j['items'][:6]:
+	    if "News" in i['snippet']['channelTitle'] or "NEWS" in i['snippet']['channelTitle'] or "뉴스" in i['snippet']['channelTitle']:
+		    news.append({
+                "title" : html.unescape(i['snippet']['title']),
+                "description" : html.unescape(i['snippet']['description']),
+                "thumbnail" : i['snippet']['thumbnails']['high']['url'],
+                "channelTitle" : i['snippet']['channelTitle'],
+                "link" : f"https://www.youtube.com/watch?v={i['id']['videoId']}"
+            })
+    data['youtube'] = news
     threading.Timer(1800, crawling).start()
 
 @app.route('/coronaApi')
 def coronaApi():
-    return jsonify(data)
+    json_response = json.dumps(data, ensure_ascii=False, indent=4)
+    response = Response(json_response,content_type="application/json; charset=utf-8")
+    return response
 
 if __name__ == "__main__":
     crawling()
