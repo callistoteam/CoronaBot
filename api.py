@@ -93,7 +93,6 @@ def crawling():
     #유튜브 뉴스
     r = requests.get("https://www.googleapis.com/youtube/v3/search?part=snippet&key=토큰&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=20")
     j = r.json()
-    print(type(html.unescape(j['items'][0]['snippet']['title'])))
     news = []
     for i in j['items'][:6]:
 	    if "News" in i['snippet']['channelTitle'] or "NEWS" in i['snippet']['channelTitle'] or "뉴스" in i['snippet']['channelTitle']:
