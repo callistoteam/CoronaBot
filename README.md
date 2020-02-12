@@ -6,7 +6,7 @@
 
 ## Introducing
 
-Real-time 2019-nCoV Virus Detector based in RoK.
+Real-time CoViD-19 Information Detector based in RoK.
 
 ## Contact
 
