@@ -24,7 +24,8 @@ data = {
                 "korea":{},
                 "world":{}
                 },
-        "youtube" : {}
+        "youtube" : {},
+        "naver" : {}
         }
 
 def crawling():
@@ -94,7 +95,7 @@ def crawling():
     r = requests.get("https://www.googleapis.com/youtube/v3/search?part=snippet&key=토큰&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=20")
     j = r.json()
     news = []
-    for i in j['items'][:6]:
+    for i in j['items']:
 	    if "News" in i['snippet']['channelTitle'] or "NEWS" in i['snippet']['channelTitle'] or "뉴스" in i['snippet']['channelTitle']:
 		    news.append({
                 "title" : html.unescape(i['snippet']['title']),
@@ -104,6 +105,21 @@ def crawling():
                 "link" : f"https://www.youtube.com/watch?v={i['id']['videoId']}"
             })
     data['youtube'] = news
+
+    #네이버 뉴스
+    client_id = "아이디"
+    client_secret = "시크릿"
+    r = requests.get("https://openapi.naver.com/v1/search/news?query=신종%20코로나%20바이러스&display=10&start=1&sort=sim&filter=all", headers={"X-Naver-Client-Id":client_id, "X-Naver-Client-Secret":client_secret})
+    j = json.loads(r.text)
+    news = []
+    for i in j['items']:
+        news.append({
+                "title" : html.unescape(i['title']).replace("<b>","").replace("</b>",""),
+                "description" : html.unescape(i['description']).replace("<b>","").replace("</b>",""),
+                "thumbnail" : OpenGraph(url=i['link']).image,
+                "link" : i['link']
+            })
+    data['naver'] = news
     threading.Timer(1800, crawling).start()
 
 @app.route('/coronaApi')
