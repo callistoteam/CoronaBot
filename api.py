@@ -25,7 +25,8 @@ data = {
                 "world":{}
                 },
         "youtube" : {},
-        "naver" : {}
+        "naver" : {},
+        "path" : {}
         }
 
 def crawling():
@@ -46,7 +47,7 @@ def crawling():
     soup = BeautifulSoup(r.content, 'html.parser')
     content = soup.select("#listView > ul > li > a")
     for i in content:
-        if i['title'].startswith("신종코로나바이러스감염증 국내 발생 현황(일일집계통계"):
+        if i['title'].startswith("코로나바이러스감염증-19 국내 발생 현황(일일집계통계,"):
             r_a = requests.get(f"https://www.cdc.go.kr/{i['href']}")
             break
         else:
@@ -92,19 +93,20 @@ def crawling():
     data['sars']['world']['countries'] = 26
 
     #유튜브 뉴스
-    r = requests.get("https://www.googleapis.com/youtube/v3/search?part=snippet&key=토큰&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=20")
+    r = requests.get("https://www.googleapis.com/youtube/v3/search?part=snippet&key=https://www.googleapis.com/youtube/v3/search?part=snippet&key=토큰&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=5&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=5")
     j = r.json()
-    news = []
-    for i in j['items']:
-	    if "News" in i['snippet']['channelTitle'] or "NEWS" in i['snippet']['channelTitle'] or "뉴스" in i['snippet']['channelTitle']:
-		    news.append({
-                "title" : html.unescape(i['snippet']['title']),
-                "description" : html.unescape(i['snippet']['description']),
-                "thumbnail" : i['snippet']['thumbnails']['high']['url'],
-                "channelTitle" : i['snippet']['channelTitle'],
-                "link" : f"https://www.youtube.com/watch?v={i['id']['videoId']}"
-            })
-    data['youtube'] = news
+    youtube = []
+    print(list(j.keys())[0])
+    if list(j.keys())[0] != "error":
+        for i in j['items']:
+            youtube.append({
+                    "title" : html.unescape(i['snippet']['title']),
+                    "description" : html.unescape(i['snippet']['description']),
+                    "thumbnail" : i['snippet']['thumbnails']['high']['url'],
+                    "channelTitle" : i['snippet']['channelTitle'],
+                    "link" : f"https://www.youtube.com/watch?v={i['id']['videoId']}"
+                })
+    data['youtube'] = youtube
 
     #네이버 뉴스
     client_id = "아이디"
@@ -120,13 +122,27 @@ def crawling():
                 "link" : i['link']
             })
     data['naver'] = news
-    threading.Timer(1800, crawling).start()
 
+    #확진자 이동경로
+    r = requests.get('http://ncov.mohw.go.kr/bdBoardList.do?brdId=1&brdGubun=12')
+    soup = BeautifulSoup(r.content, 'html.parser')
+    path = {}
+    for i in range(1,data['korea']['infected']+1):
+        description = soup.select(f"#no{i} > ul > li")
+        desc = []
+        for j in description:
+            desc.append(j.text.replace("\xa0",""))
+        path[f"{i}번"] = desc
+    data['path'] = path
+
+    threading.Timer(1800, crawling).start()
+    
 @app.route('/coronaApi')
 def coronaApi():
     json_response = json.dumps(data, ensure_ascii=False, indent=4)
     response = Response(json_response,content_type="application/json; charset=utf-8")
     return response
+    
 
 if __name__ == "__main__":
     crawling()
