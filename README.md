@@ -1,8 +1,9 @@
-# CoronaBot for Discord
+# CoronaBot for Discord & KakaoTalk
 
 ![license](https://img.shields.io/github/license/callistoteam/coronabot?style=flat-square)
 [![Discord](https://img.shields.io/discord/470028725287780352?style=flat-square)](https://invite.gg/wonderbot)
 ![Language](https://img.shields.io/badge/language-Python3-yellow?style=flat-square)
+[![Kakao](https://img.shields.io/badge/Kakao-CoronaBot-yellow?style=flat-square)](https://pf.kakao.com/_eVJxlxb)
 
 ## Introducing
 
