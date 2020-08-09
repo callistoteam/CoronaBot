@@ -1,102 +1,118 @@
-#-*- coding: utf-8 -*-
-
-from flask import Flask, request, jsonify, Response
-import sys
 import requests
-import math
 from opengraph_py3 import OpenGraph
 from bs4 import BeautifulSoup
-import time
-import threading
 import re
 import html
 import json
+import pymysql
 
-app = Flask(__name__)
-data = {
-        "korea":{},
-        "world":{},
-        "mers":{
-                "korea":{},
-                "world":{}
-                },
-        "sars":{
-                "korea":{},
-                "world":{}
-                },
-        "youtube" : {},
-        "naver" : {},
-        "path" : {}
+youtube_key = ""
+naver_id = ""
+naver_key = ""
+
+db = pymysql.connect(
+    host='host',
+    port=3306,
+    user='user',
+    passwd='passwd',
+    db='db',
+    charset='utf8',
+    autocommit = True
+    )
+cursor = db.cursor()
+
+def main():
+    #한국
+    r = requests.get('http://ncov.mohw.go.kr')
+    soup = BeautifulSoup(r.content, 'html.parser')
+    content = soup.select("ul.liveNum > li > span")
+    infected = {
+        'infected' : int(re.findall(r"[-]?\d+",content[0].text.replace(",",""))[0]),
+        'dod' : int(re.findall(r"[-]?\d+",content[1].text.replace(",",""))[0])
+    }
+    cured = {
+        'cured' : int(re.findall(r"[-]?\d+",content[2].text.replace(",",""))[0]),
+        'dod' : int(re.findall(r"[-]?\d+",content[3].text.replace(",",""))[0])
+    }
+    death = {
+        'death' : int(re.findall(r"[-]?\d+",content[6].text.replace(",",""))[0]),
+        'dod' : int(re.findall(r"[-]?\d+",content[7].text.replace(",",""))[0])
+    }
+    negative = int(re.findall(r"[-]?\d+",soup.select(".numinfo1 > span")[1].text.replace(",",""))[0])
+    inspection = int(re.findall(r"[-]?\d+",soup.select(".suminfo > li > span")[1].text.replace(",",""))[0])
+    suspected = negative + inspection
+    uptime = re.findall(r"[-]?\d+",soup.select(".liveNumOuter > h2:nth-of-type(1) > a:nth-of-type(1) > span:nth-of-type(1)")[0].text)
+    uptime = uptime[0]+"/"+uptime[1]
+    lethality = round(death['death']/infected['infected']*100,2)
+    cursor.execute("UPDATE `data` SET `korea`=%s", json.dumps({
+        "infected" : infected,
+        "cured" : cured,
+        "death" : death,
+        "lethality" : lethality,
+        "negative" : negative,
+        "suspected" : suspected,
+        "inspection" : inspection,
+        "uptime" : uptime}))
+
+    #한국 - 지역별
+    r = requests.get('http://ncov.mohw.go.kr')
+    soup = BeautifulSoup(r.content, 'html.parser')
+    region = {}
+    for count, name in enumerate(["seoul","busan","daegu","incheon","gwangju","daejeon","ulsan","sejong","gg","gangwon","cb","cn","jb","jn","gb","gn","jeju"]):
+        content = soup.select(f"#map_city{count+1} > div > ul > li > div > span")
+        region[name] = {
+            "infected" : int(re.findall(r"[-]?\d+",content[1].text.replace(",",""))[0]),
+            "dod" : int(re.findall(r"[-]?\d+",content[3].text.replace(",",""))[0]),
+            "death" : int(re.findall(r"[-]?\d+",content[5].text.replace(",",""))[0]),
+            "cured" : int(re.findall(r"[-]?\d+",content[7].text.replace(",",""))[0])
         }
-
-def crawling():
-    global data
-    #한국 확진 완치 검사중
-    r = requests.get('http://ncov.mohw.go.kr/index_main.jsp')
-    soup = BeautifulSoup(r.content, 'html.parser')
-    content = soup.select(".co_cur > ul > li > a")
-    infected = int(content[0].text.replace("명",""))
-    cured = int(content[1].text.replace("명",""))
-    inspection = int(content[2].text.replace("명",""))
-    data['korea']['infected'] = infected
-    data['korea']['cured'] = cured
-    data['korea']['inspection'] = inspection
-
-    #한국 의사환자 결과음성
-    r = requests.get('https://www.cdc.go.kr/board/board.es?mid=a20501000000&bid=0015')
-    soup = BeautifulSoup(r.content, 'html.parser')
-    content = soup.select("#listView > ul > li > a")
-    for i in content:
-        if i['title'].startswith("코로나바이러스감염증-19 국내 발생 현황(일일집계통계,"):
-            r_a = requests.get(f"https://www.cdc.go.kr/{i['href']}")
-            break
-        else:
-            pass
-    soup = BeautifulSoup(r_a.content, 'html.parser')
-    content = soup.find("table")
-    trs = content.find_all("tr")
-    suspected = int(trs[3].find_all("td")[5].text.replace(",",""))
-    negative = int(trs[3].find_all("td")[7].text.replace(",",""))
-    data['korea']['suspected'] = suspected
-    data['korea']['negative'] = negative
-
-    #전세계 확진 사망 완치 치사율 발생국가
+    cursor.execute("UPDATE `data` SET `region`=%s", json.dumps(region))
+    
+    #세계
     r = requests.get('https://www.worldometers.info/coronavirus/')
     soup = BeautifulSoup(r.content, 'html.parser')
     content = soup.select(".content-inner > div > div > span")
-    cases = int(content[0].text.replace(",",""))
+    infected = int(content[0].text.replace(",",""))
     death = int(content[1].text.replace(",",""))
     cured = int(content[2].text.replace(",",""))
-    content = soup.find_all("div", {"class": "col-md-6"})[7].find_all("div", {"class": "panel-body"})
-    countries = int(re.findall("\d+", content[0].text)[0])
-    infected = cases - death - cured
-    lethality = round(death/cases*100,2)
-    data['world']['infected'] = infected
-    data['world']['death'] = death
-    data['world']['cured'] = cured
-    data['world']['lethality'] = lethality
-    data['world']['countries'] = countries
+    countries = 213
+    lethality = round(death/infected*100,2)
+    cursor.execute("UPDATE `data` SET `world`=%s", json.dumps({
+        "infected" : infected,
+        "cured" : cured,
+        "death" : death,
+        "lethality" : lethality,
+        "countries" : countries}))
 
-    #메르스2012(한국2015) 사스(2002)
-    data['mers']['world']['infected'] = 2494
-    data['mers']['world']['death'] = 858
-    data['mers']['korea']['infected'] = 186
-    data['mers']['korea']['death'] = 36
-    data['mers']['world']['lethality'] = 34.4
-    data['mers']['world']['countries'] = 27
+    #메르스 사스
+    cursor.execute("UPDATE `data` SET `mers`=%s", json.dumps({
+        "world" : {
+            "infected" : 2494,
+            "death" : 858,
+            "lethality" : 34.4,
+            "countries" : 27
+        },
+        "korea" : {
+            "infected" : 186,
+            "death" : 36
+        }}))
 
-    data['sars']['world']['infected'] = 8096
-    data['sars']['world']['death'] = 774
-    data['sars']['korea']['infected'] = 4
-    data['sars']['korea']['death'] = 0
-    data['sars']['world']['lethality'] = 9.6
-    data['sars']['world']['countries'] = 26
+    cursor.execute("UPDATE `data` SET `sars`=%s", json.dumps({
+        "world" : {
+            "infected" : 8096,
+            "death" : 774,
+            "lethality" : 9.6,
+            "countries" : 26
+        },
+        "korea" : {
+            "infected" : 4,
+            "death" : 0
+        }}))
 
     #유튜브 뉴스
-    r = requests.get("https://www.googleapis.com/youtube/v3/search?part=snippet&key=토큰&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=5&q=%EC%8B%A0%EC%A2%85%EC%BD%94%EB%A1%9C%EB%82%98%EB%B0%94%EC%9D%B4%EB%9F%AC%EC%8A%A4&maxResults=5")
+    r = requests.get(f"https://www.googleapis.com/youtube/v3/search?part=snippet&key={youtube_key}&q=코로나19&maxResults=5")
     j = r.json()
     youtube = []
-    print(list(j.keys())[0])
     if list(j.keys())[0] != "error":
         for i in j['items']:
             youtube.append({
@@ -106,44 +122,68 @@ def crawling():
                     "channelTitle" : i['snippet']['channelTitle'],
                     "link" : f"https://www.youtube.com/watch?v={i['id']['videoId']}"
                 })
-    data['youtube'] = youtube
+    cursor.execute("UPDATE `data` SET `youtube`=%s", json.dumps(youtube))
 
     #네이버 뉴스
-    client_id = "아이디"
-    client_secret = "시크릿"
-    r = requests.get("https://openapi.naver.com/v1/search/news?query=신종%20코로나%20바이러스&display=10&start=1&sort=sim&filter=all", headers={"X-Naver-Client-Id":client_id, "X-Naver-Client-Secret":client_secret})
+    r = requests.get(f"https://openapi.naver.com/v1/search/news?query=코로나19&display=10&start=1&sort=sim&filter=all", headers={"X-Naver-Client-Id":naver_id, "X-Naver-Client-Secret":naver_key})
     j = json.loads(r.text)
-    news = []
+    naver = []
     for i in j['items']:
-        news.append({
+        naver.append({
                 "title" : html.unescape(i['title']).replace("<b>","").replace("</b>",""),
                 "description" : html.unescape(i['description']).replace("<b>","").replace("</b>",""),
                 "thumbnail" : OpenGraph(url=i['link']).image,
                 "link" : i['link']
             })
-    data['naver'] = news
+    cursor.execute("UPDATE `data` SET `naver`=%s", json.dumps(naver))
 
-    #확진자 이동경로
-    r = requests.get('http://ncov.mohw.go.kr/bdBoardList.do?brdId=1&brdGubun=12')
+    #성별 연령별
+    r = requests.get("http://ncov.mohw.go.kr/bdBoardList_Real.do?brdId=1&brdGubun=11&ncvContSeq=&contSeq=&board_id=&gubun=")
     soup = BeautifulSoup(r.content, 'html.parser')
-    path = {}
-    for i in range(1,data['korea']['infected']+1):
-        description = soup.select(f"#no{i} > ul > li")
-        desc = []
-        for j in description:
-            desc.append(j.text.replace("\xa0",""))
-        path[f"{i}번"] = desc
-    data['path'] = path
-
-    threading.Timer(1800, crawling).start()
-    
-@app.route('/coronaApi')
-def coronaApi():
-    json_response = json.dumps(data, ensure_ascii=False, indent=4)
-    response = Response(json_response,content_type="application/json; charset=utf-8")
-    return response
-    
+    content = soup.find_all("table")[4]
+    trs = content.find_all("tr")
+    male = {"infected" : {
+        "infected" : int(trs[1].find_all("td")[0].find_all("span")[0].text.replace(",","")),
+        "percent" : float(trs[1].find_all("td")[0].find_all("span")[1].text.replace("(","").replace(")",""))},
+            "death" : {
+        "death" : int(trs[1].find_all("td")[1].find_all("span")[0].text.replace(",","")),
+        "percent" : float(trs[1].find_all("td")[1].find_all("span")[1].text.replace("(","").replace(")",""))},
+            "lethality" : float(trs[1].find_all("td")[2].find_all("span")[0].text.replace(",",""))}
+    female = {"infected" : {
+        "infected" : int(trs[2].find_all("td")[0].find_all("span")[0].text.replace(",","")),
+        "percent" : float(trs[2].find_all("td")[0].find_all("span")[1].text.replace("(","").replace(")",""))},
+            "death" : {
+        "death" : int(trs[2].find_all("td")[1].find_all("span")[0].text.replace(",","")),
+        "percent" : float(trs[2].find_all("td")[1].find_all("span")[1].text.replace("(","").replace(")",""))},
+            "lethality" : float(trs[2].find_all("td")[2].find_all("span")[0].text.replace(",",""))}
+    cursor.execute('UPDATE `data` SET `korea`=JSON_SET(korea, "$.male", %s)', json.dumps(male))
+    cursor.execute('UPDATE `data` SET `korea`=JSON_SET(korea, "$.female", %s)', json.dumps(female))
+    content = soup.find_all("table")[5]
+    trs = content.find_all("tr")
+    for i in trs:
+        try:
+            name = i.find("th").text
+            value = int(i.find("td").find("span").text.replace(",",""))
+        except:
+            pass
+        if name == "0~9":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, "$.child", %s)""", value)
+        elif name == "10~19":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."10s"', %s)""", value)
+        elif name == "20~29":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."20s"', %s)""", value)
+        elif name == "30~39":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."30s"', %s)""", value)
+        elif name == "40~49":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."40s"', %s)""", value)
+        elif name == "50~59":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."50s"', %s)""", value)
+        elif name == "60~69":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."60s"', %s)""", value)
+        elif name == "70~79":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."70s"', %s)""", value)
+        elif name == "80 이상":
+            cursor.execute("""UPDATE `data` SET `korea`=JSON_SET(korea, '$."80s"', %s)""", value)
 
 if __name__ == "__main__":
-    crawling()
-    app.run(host='0.0.0.0', port=52907, debug=True)
+    main()
